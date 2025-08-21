@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
+#include "BuildVersion.h"
 
 //==============================================================================
 /** Custom Look and Feel for glowing labels */
@@ -200,6 +201,7 @@ public:
 
         // Add visual elements
         addAndMakeVisible(titleLabel);
+        addAndMakeVisible(buildVersionLabel);
         addAndMakeVisible(compressionMeter);
         addAndMakeVisible(inputMeter);
         addAndMakeVisible(outputMeter);
@@ -213,6 +215,14 @@ public:
         
         // Add a subtle glow effect to the title
         titleLabel.setLookAndFeel(new GlowingLabelLookAndFeel());
+        
+        // Style the build version label
+        buildVersionLabel.setText(BuildVersion::getDisplayString(), dontSendNotification);
+        buildVersionLabel.setFont(FontOptions(12.0f, Font::plain));
+        buildVersionLabel.setJustificationType(Justification::centredRight);
+        buildVersionLabel.setColour(Label::textColourId, Colours::lightgrey.withAlpha(0.7f));
+        buildVersionLabel.setColour(Label::backgroundColourId, Colours::transparentBlack);
+        buildVersionLabel.setTooltip(BuildVersion::getDetailedString());
 
         // Set resize limits for this plug-in
         setResizeLimits(700, 700, 1200, 1000);
@@ -290,6 +300,10 @@ public:
     void resized() override
     {
         auto bounds = getLocalBounds().reduced(25);
+
+        // Build version in top-right corner
+        auto versionBounds = bounds.removeFromTop(25);
+        buildVersionLabel.setBounds(versionBounds);
 
         // Title at the top
         titleLabel.setBounds(bounds.removeFromTop(70));
@@ -498,6 +512,7 @@ private:
     Slider thresholdSlider, attackSlider, releaseSlider, makeupSlider;
     ComboBox ratioComboBox;
     Label titleLabel;
+    Label buildVersionLabel;
     LevelMeter compressionMeter{"COMPRESSION"};
     LevelMeter inputMeter{"INPUT"};
     LevelMeter outputMeter{"OUTPUT"};

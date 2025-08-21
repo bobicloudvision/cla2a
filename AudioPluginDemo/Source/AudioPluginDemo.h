@@ -56,7 +56,7 @@
 
 #pragma once
 
-#include "Compressor.h"
+#include "SimpleCompressor.h"
 #include "CompressorEditor.h"
 
 //==============================================================================
@@ -222,16 +222,12 @@ private:
         auto release = 1.0f + releaseNorm * 399.0f;       // 1ms to 400ms
         auto makeupGain = -30.0f + makeupNorm * 60.0f;    // -30dB to +30dB
         
-        // Update the compressor with actual values
-        compressor.setThreshold(threshold);
-        compressor.setRatio(actualRatio);
-        compressor.setAttack(attack);
-        compressor.setRelease(release);
-        compressor.setMakeupGain(makeupGain);
+        // Update the simple compressor with actual values
+        compressor.setParameters(threshold, actualRatio, attack, release, makeupGain);
     }
 
-    // The compressor instance
-    Compressor compressor{-20.0f, 4.0f, 10.0f, 100.0f, 0.0f};
+    // The simple compressor instance
+    SimpleCompressor compressor;
 
     static BusesProperties getBusesProperties()
     {

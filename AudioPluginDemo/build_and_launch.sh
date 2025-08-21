@@ -370,6 +370,14 @@ build_and_launch() {
         return 1
     fi
     
+    # Increment build number
+    if [ -f "increment_build.sh" ]; then
+        print_status "Incrementing build number..."
+        ./increment_build.sh
+    else
+        print_warning "increment_build.sh not found, skipping build number increment"
+    fi
+    
     # Build the project
     if build_project; then
         print_success "Build completed! Launching standalone app..."

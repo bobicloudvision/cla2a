@@ -87,7 +87,17 @@ public:
         // Detect potential oscillation and dampen it
         bool isExtremeSettings = (attack < 2.0f && release < 10.0f);
         
-        if (targetGainReduction > envelope)
+        // FIXED: Add dead zone for idle envelope behavior (fixes threshold > -24dB noise)
+        // When target is very close to zero and current envelope is also close to zero,
+        // force both to exactly zero to prevent micro-oscillations
+        if (targetGainReduction < 0.1f && envelope < 0.1f) {
+            envelope = 0.0f; // Force to exact zero - no hunting around zero
+        }
+        // Also handle the case where we're very close to the target
+        else if (absEnvelopeDiff < 0.01f) {
+            envelope = targetGainReduction; // Snap to target if very close
+        }
+        else if (targetGainReduction > envelope)
         {
             // Attack phase - improved stability for fast attacks
             if (isExtremeSettings) {
@@ -118,12 +128,6 @@ public:
         
         // Enhanced bounds check with hysteresis to prevent rapid oscillation
         envelope = jlimit(0.0f, 60.0f, envelope);
-        
-        // Add minimum change threshold to prevent micro-oscillations
-        if (isExtremeSettings && absEnvelopeDiff < 0.01f) {
-            // Force envelope to settle if changes are too small
-            envelope = targetGainReduction;
-        }
         
         // Apply compression and makeup gain with safety limits
         auto gainInDb = -envelope + makeupGain;
