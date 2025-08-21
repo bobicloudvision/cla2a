@@ -193,7 +193,7 @@ public:
         // Set up sliders with better styling
         setupThresholdSlider(thresholdSlider, "THRESHOLD", -20.0f);
         setupRatioComboBox();
-        setupTimeSlider(attackSlider, "ATTACK", 10.0f, 0.1f, 400.0f);
+        setupTimeSlider(attackSlider, "ATTACK", 10.0f, 0.0f, 400.0f);
         setupTimeSlider(releaseSlider, "RELEASE", 100.0f, 1.0f, 400.0f);
         setupSlider(makeupSlider, "MAKEUP", 0.0f);
         makeupSlider.setTextValueSuffix(" dB");

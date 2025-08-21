@@ -66,8 +66,6 @@ public:
         {
             auto overThreshold = inputLevel - threshold;
             
-            // Keep original behavior - hysteresis was causing artifacts
-            
             if (overThreshold > 0.0f) {
                 // Protect against division by very small ratio values
                 auto safeRatio = std::max(ratio, 1.0f);
@@ -78,17 +76,27 @@ public:
             }
         }
         
-        // Apply attack/release envelope - simplified approach
+        // Apply attack/release envelope with anti-pop smoothing
         auto targetGainReduction = gainReduction;
         
         if (targetGainReduction > envelope)
         {
-            // Attack phase
-            envelope += attackCoeff * (targetGainReduction - envelope);
+            // Attack phase - add smoothing for fast attacks
+            auto attackDiff = targetGainReduction - envelope;
+            
+            // For very fast attacks, smooth the transition to prevent pops
+            if (attack < 2.0f) {
+                // Use a very subtle smoother curve for extremely fast attacks
+                auto smoothedCoeff = attackCoeff * 0.8f; // Very slight reduction
+                envelope += smoothedCoeff * attackDiff;
+            } else {
+                // Normal attack behavior for most attacks
+                envelope += attackCoeff * attackDiff;
+            }
         }
         else
         {
-            // Release phase  
+            // Release phase - normal behavior
             envelope += releaseCoeff * (targetGainReduction - envelope);
         }
         
@@ -97,8 +105,6 @@ public:
         
         // Apply compression and makeup gain with safety limits
         auto gainInDb = -envelope + makeupGain;
-        
-        // Keep original makeup gain behavior
         
         // Limit total gain to prevent extreme amplification
         gainInDb = jlimit(-60.0f, 20.0f, gainInDb);
@@ -112,14 +118,34 @@ public:
         // Limit gain to reasonable range
         compressedGain = jlimit(0.001f, 10.0f, compressedGain);
         
+        // Very subtle gain smoothing to prevent pops
+        static float lastGain = 1.0f;
+        auto gainDiff = compressedGain - lastGain;
+        
+        // Apply minimal smoothing only for extremely fast attacks
+        if (attack < 1.0f) {
+            // Very gentle smoothing for ultra-fast attacks
+            auto smoothingFactor = std::max(0.05f, attack / 100.0f);
+            compressedGain = lastGain + smoothingFactor * gainDiff;
+        }
+        
+        lastGain = compressedGain;
+        
         auto output = input * compressedGain;
         
         // Final output safety check
         if (!std::isfinite(output))
             return 0.0f;
             
-        // Soft limiting to prevent harsh clipping
-        return softLimit(output);
+        // Add harmonic saturation based on compression intensity
+        // This creates that classic analog compressor distortion when pushed hard
+        auto saturationOutput = addHarmonicSaturation(output, envelope);
+        
+        // Add extreme saturation for crazy settings (fast attack/release + high ratio)
+        auto extremeOutput = addExtremeSaturation(saturationOutput, envelope, attack, release, ratio);
+        
+        // Final soft limiting to prevent harsh clipping
+        return softLimit(extremeOutput);
     }
     
     /** Process a buffer of samples */
@@ -276,6 +302,65 @@ public:
         return input;
     }
     
+    /** Add harmonic saturation based on compression intensity */
+    float addHarmonicSaturation(float input, float compressionAmount)
+    {
+        // Only add saturation when compression is active
+        if (compressionAmount < 0.1f)
+            return input;
+            
+        // Calculate saturation intensity based on compression amount
+        auto saturationIntensity = jlimit(0.0f, 0.8f, compressionAmount / 60.0f);
+        
+        // Add subtle even harmonics for warmth
+        auto inputSquared = input * input;
+        auto saturation = input + (inputSquared * saturationIntensity * 0.3f);
+        
+        // Add odd harmonics for character (subtle)
+        auto inputCubed = input * input * input;
+        saturation += (inputCubed * saturationIntensity * 0.1f);
+        
+        // Soft limit the result
+        return tanhf(saturation);
+    }
+    
+    /** Add aggressive saturation for extreme compression settings */
+    float addExtremeSaturation(float input, float compressionAmount, float attackTime, float releaseTime, float compressionRatio)
+    {
+        // Only apply extreme saturation when settings are pushed hard
+        auto isExtreme = (attackTime <= 2.0f && releaseTime < 10.0f && compressionRatio > 8.0f);
+        
+        if (!isExtreme)
+            return input;
+            
+        // Calculate how "crazy" the settings are
+        auto attackFactor = std::max(0.0f, (5.0f - attackTime) / 5.0f);  // 0-1 based on attack speed (0ms = max factor)
+        auto releaseFactor = std::max(0.0f, (20.0f - releaseTime) / 20.0f); // 0-1 based on release speed
+        auto ratioFactor = std::max(0.0f, (compressionRatio - 8.0f) / 12.0f); // 0-1 based on ratio
+        
+        auto extremeIntensity = (attackFactor + releaseFactor + ratioFactor) / 3.0f;
+        extremeIntensity = jlimit(0.0f, 1.0f, extremeIntensity);
+        
+        // Add more aggressive harmonics for extreme settings
+        auto inputSquared = input * input;
+        auto inputCubed = input * input * input;
+        
+        // Create rich harmonic content
+        auto saturation = input + 
+                         (inputSquared * extremeIntensity * 0.5f) +      // Even harmonics
+                         (inputCubed * extremeIntensity * 0.3f) +        // Odd harmonics
+                         (inputSquared * inputSquared * extremeIntensity * 0.2f); // Higher order
+        
+        // Apply asymmetric saturation for more character
+        if (saturation > 0.0f) {
+            saturation += (saturation * saturation * extremeIntensity * 0.1f);
+        } else {
+            saturation -= (saturation * saturation * extremeIntensity * 0.1f);
+        }
+        
+        return tanhf(saturation);
+    }
+    
     /** Update coefficients from normalized parameter values (0.0 to 1.0) */
     void updateFromNormalizedParameters(float thresholdNorm, float ratioNorm, 
                                       float attackNorm, float releaseNorm, float makeupNorm)
@@ -283,7 +368,7 @@ public:
         // Convert normalized values to actual parameter ranges
         threshold = -60.0f + thresholdNorm * 60.0f;  // -60dB to 0dB
         ratio = 1.0f + ratioNorm * 19.0f;            // 1:1 to 20:1
-        attack = 0.1f + attackNorm * 399.9f;         // 0.1ms to 400ms
+        attack = attackNorm * 400.0f;                   // 0ms to 400ms
         release = 1.0f + releaseNorm * 399.0f;       // 1ms to 400ms
         makeupGain = -30.0f + makeupNorm * 60.0f;    // -30dB to +30dB
         

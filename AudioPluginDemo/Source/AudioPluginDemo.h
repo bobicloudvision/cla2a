@@ -74,7 +74,7 @@ public:
           state (*this, nullptr, "state",
                  { std::make_unique<AudioParameterFloat> (ParameterID { "threshold", 1 }, "Threshold", NormalisableRange<float> (-60.0f, 0.0f), -20.0f),
                    std::make_unique<AudioParameterFloat> (ParameterID { "ratio", 1 }, "Ratio", NormalisableRange<float> (1.0f, 20.0f), 4.0f),
-                   std::make_unique<AudioParameterFloat> (ParameterID { "attack", 1 }, "Attack", NormalisableRange<float> (0.1f, 400.0f), 10.0f),
+                   std::make_unique<AudioParameterFloat> (ParameterID { "attack", 1 }, "Attack", NormalisableRange<float> (0.0f, 400.0f), 10.0f),
                    std::make_unique<AudioParameterFloat> (ParameterID { "release", 1 }, "Release", NormalisableRange<float> (1.0f, 400.0f), 100.0f),
                    std::make_unique<AudioParameterFloat> (ParameterID { "makeup", 1 }, "Makeup Gain", NormalisableRange<float> (-30.0f, 30.0f), 0.0f) })
     {
@@ -218,7 +218,7 @@ private:
         
         // Convert normalized values to actual ranges
         auto threshold = -60.0f + thresholdNorm * 60.0f;  // -60dB to 0dB
-        auto attack = 0.1f + attackNorm * 399.9f;         // 0.1ms to 400ms
+        auto attack = attackNorm * 400.0f;                   // 0ms to 400ms
         auto release = 1.0f + releaseNorm * 399.0f;       // 1ms to 400ms
         auto makeupGain = -30.0f + makeupNorm * 60.0f;    // -30dB to +30dB
         
