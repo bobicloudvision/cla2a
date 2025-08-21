@@ -82,6 +82,8 @@ find_standalone_app() {
             # Check multiple possible locations
             if [ -d "build/$STANDALONE_APP_NAME" ]; then
                 app_path="build/$STANDALONE_APP_NAME"
+            elif [ -d "Builds/MacOSX/build/Release/$STANDALONE_APP_NAME" ]; then
+                app_path="Builds/MacOSX/build/Release/$STANDALONE_APP_NAME"
             elif [ -d "AudioPluginDemo.xcodeproj/build/Release/$STANDALONE_APP_NAME" ]; then
                 app_path="AudioPluginDemo.xcodeproj/build/Release/$STANDALONE_APP_NAME"
             elif [ -d "build/Release/$STANDALONE_APP_NAME" ]; then
