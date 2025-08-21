@@ -66,15 +66,7 @@ public:
         {
             auto overThreshold = inputLevel - threshold;
             
-            // Special handling for very low thresholds to prevent excessive sensitivity
-            auto effectiveThreshold = threshold;
-            if (threshold < -40.0f) {
-                // For very low thresholds, add some hysteresis to prevent constant compression
-                auto hysteresis = std::min(5.0f, std::abs(threshold + 40.0f) * 0.1f);
-                if (overThreshold < hysteresis) {
-                    overThreshold = 0.0f; // Ignore very small overages
-                }
-            }
+            // Keep original behavior - hysteresis was causing artifacts
             
             if (overThreshold > 0.0f) {
                 // Protect against division by very small ratio values
@@ -86,49 +78,27 @@ public:
             }
         }
         
-        // Apply attack/release envelope with improved stability
+        // Apply attack/release envelope - simplified approach
         auto targetGainReduction = gainReduction;
-        
-        // Ensure coefficients are valid and prevent extreme values
-        auto safeAttackCoeff = jlimit(0.001f, 0.95f, attackCoeff);
-        auto safeReleaseCoeff = jlimit(0.001f, 0.95f, releaseCoeff);
-        
-        // Calculate envelope difference for stability check
-        auto envelopeDiff = targetGainReduction - envelope;
         
         if (targetGainReduction > envelope)
         {
-            // Attack phase - approaching compression
-            envelope += safeAttackCoeff * envelopeDiff;
+            // Attack phase
+            envelope += attackCoeff * (targetGainReduction - envelope);
         }
         else
         {
-            // Release phase - releasing compression
-            // Use smaller coefficient for very small differences to prevent noise
-            auto effectiveReleaseCoeff = safeReleaseCoeff;
-            if (std::abs(envelopeDiff) < 0.1f) {
-                effectiveReleaseCoeff *= 0.5f; // Slower release for small changes
-            }
-            envelope += effectiveReleaseCoeff * envelopeDiff;
+            // Release phase  
+            envelope += releaseCoeff * (targetGainReduction - envelope);
         }
         
-        // Ensure envelope stays within reasonable bounds with smoother clamping
+        // Simple bounds check
         envelope = jlimit(0.0f, 60.0f, envelope);
-        
-        // Additional stability: prevent very small envelope values that could cause noise
-        if (envelope < 0.001f && targetGainReduction < 0.001f) {
-            envelope = 0.0f;
-        }
         
         // Apply compression and makeup gain with safety limits
         auto gainInDb = -envelope + makeupGain;
         
-        // Special handling for high makeup gain to prevent excessive amplification
-        if (makeupGain > 10.0f) {
-            // Reduce makeup gain effectiveness for very high values to prevent noise
-            auto makeupReduction = (makeupGain - 10.0f) * 0.3f; // Reduce by 70%
-            gainInDb = -envelope + (10.0f + makeupReduction);
-        }
+        // Keep original makeup gain behavior
         
         // Limit total gain to prevent extreme amplification
         gainInDb = jlimit(-60.0f, 20.0f, gainInDb);
@@ -198,6 +168,38 @@ public:
         updateCoefficients();
     }
     
+    /** Set ratio by predefined preset index */
+    void setRatioPreset(int presetIndex)
+    {
+        static const float ratioPresets[] = { 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f, 10.0f, 20.0f };
+        if (presetIndex >= 0 && presetIndex < 8) {
+            ratio = ratioPresets[presetIndex];
+            updateCoefficients();
+        }
+    }
+    
+    /** Get current ratio preset index */
+    int getRatioPresetIndex() const
+    {
+        static const float ratioPresets[] = { 1.0f, 2.0f, 3.0f, 4.0f, 6.0f, 8.0f, 10.0f, 20.0f };
+        for (int i = 0; i < 8; ++i) {
+            if (std::abs(ratio - ratioPresets[i]) < 0.1f) {
+                return i;
+            }
+        }
+        return 3; // Default to 4:1 if no match
+    }
+    
+    /** Get ratio preset name */
+    static String getRatioPresetName(int presetIndex)
+    {
+        static const String presetNames[] = { "1:1", "2:1", "3:1", "4:1", "6:1", "8:1", "10:1", "20:1" };
+        if (presetIndex >= 0 && presetIndex < 8) {
+            return presetNames[presetIndex];
+        }
+        return "4:1";
+    }
+    
     /** Set attack time in milliseconds */
     void setAttack(float newAttack) 
     { 
@@ -208,17 +210,7 @@ public:
     /** Set release time in milliseconds */
     void setRelease(float newRelease) 
     { 
-        // Smooth parameter changes to prevent sudden jumps
-        auto clampedRelease = jlimit(5.0f, 5000.0f, newRelease);
-        
-        // If the change is very large, smooth it
-        if (std::abs(clampedRelease - release) > 50.0f) {
-            auto diff = clampedRelease - release;
-            release += diff * 0.1f; // Gradual change
-        } else {
-            release = clampedRelease;
-        }
-        
+        release = newRelease; 
         updateCoefficients();
     }
     
@@ -254,41 +246,22 @@ public:
     {
         if (sampleRate > 0.0)
         {
-            // Ensure attack and release times are within safe bounds
-            auto safeAttack = jlimit(1.0f, 1000.0f, attack);  // Increased minimum attack
-            auto safeRelease = jlimit(10.0f, 5000.0f, release); // Increased minimum release
+            // Use a simpler, more stable approach
+            // Convert milliseconds to samples
+            auto attackSamples = attack * 0.001f * static_cast<float>(sampleRate);
+            auto releaseSamples = release * 0.001f * static_cast<float>(sampleRate);
             
-            // Calculate time constants in samples with more robust approach
-            auto attackTimeInSamples = safeAttack * 0.001f * static_cast<float>(sampleRate);
-            auto releaseTimeInSamples = safeRelease * 0.001f * static_cast<float>(sampleRate);
+            // Ensure minimum values to prevent instability
+            attackSamples = std::max(attackSamples, 1.0f);
+            releaseSamples = std::max(releaseSamples, 1.0f);
             
-            // Prevent division by zero and ensure reasonable values
-            attackTimeInSamples = std::max(attackTimeInSamples, 2.0f);  // Increased minimum
-            releaseTimeInSamples = std::max(releaseTimeInSamples, 5.0f); // Increased minimum
+            // Simple exponential coefficient calculation
+            attackCoeff = 1.0f - expf(-2.2f / attackSamples);
+            releaseCoeff = 1.0f - expf(-2.2f / releaseSamples);
             
-            // Use more stable coefficient calculation
-            // For exponential decay: coeff = 1 - exp(-1 / timeInSamples)
-            attackCoeff = 1.0f - expf(-1.0f / attackTimeInSamples);
-            releaseCoeff = 1.0f - expf(-1.0f / releaseTimeInSamples);
-            
-            // Clamp coefficients to safe range with more conservative limits
-            attackCoeff = jlimit(0.01f, 0.8f, attackCoeff);   // More conservative
-            releaseCoeff = jlimit(0.01f, 0.8f, releaseCoeff); // More conservative
-            
-            // Additional safety: if both attack and release are very fast, slow them down
-            if (safeAttack < 2.0f && safeRelease < 20.0f) {
-                attackCoeff *= 0.5f;  // Slow down attack
-                releaseCoeff *= 0.5f; // Slow down release
-            }
-            
-            // Debug output for release issues
-            #ifdef DEBUG
-            if (release != lastRelease) {
-                printf("Release changed: %.2fms -> coeff: %.6f (samples: %.2f)\n", 
-                       release, releaseCoeff, releaseTimeInSamples);
-                lastRelease = release;
-            }
-            #endif
+            // Simple safety limits
+            attackCoeff = jlimit(0.001f, 0.999f, attackCoeff);
+            releaseCoeff = jlimit(0.001f, 0.999f, releaseCoeff);
         }
     }
     
@@ -307,12 +280,12 @@ public:
     void updateFromNormalizedParameters(float thresholdNorm, float ratioNorm, 
                                       float attackNorm, float releaseNorm, float makeupNorm)
     {
-        // Convert normalized values to actual parameter ranges with safer limits
-        threshold = jlimit(-60.0f, 0.0f, -60.0f + thresholdNorm * 60.0f);  // -60dB to 0dB
-        ratio = jlimit(1.0f, 20.0f, 1.0f + ratioNorm * 19.0f);            // 1:1 to 20:1
-        attack = jlimit(0.5f, 100.0f, 0.5f + attackNorm * 99.5f);         // 0.5ms to 100ms (more conservative)
-        release = jlimit(5.0f, 1000.0f, 5.0f + releaseNorm * 995.0f);     // 5ms to 1000ms (more conservative)
-        makeupGain = jlimit(0.0f, 18.0f, makeupNorm * 18.0f);             // 0dB to 18dB (reduced from 24dB)
+        // Convert normalized values to actual parameter ranges
+        threshold = -60.0f + thresholdNorm * 60.0f;  // -60dB to 0dB
+        ratio = 1.0f + ratioNorm * 19.0f;            // 1:1 to 20:1
+        attack = 0.1f + attackNorm * 399.9f;         // 0.1ms to 400ms
+        release = 1.0f + releaseNorm * 399.0f;       // 1ms to 400ms
+        makeupGain = -30.0f + makeupNorm * 60.0f;    // -30dB to +30dB
         
         updateCoefficients();
     }
@@ -338,10 +311,7 @@ private:
     mutable float inputLevel = -60.0f;
     mutable float outputLevel = -60.0f;
     
-    // Debug variables
-    #ifdef DEBUG
-    float lastRelease = -1.0f;
-    #endif
+
     
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Compressor)
 };

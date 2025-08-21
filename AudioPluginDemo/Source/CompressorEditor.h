@@ -186,17 +186,17 @@ public:
         : AudioProcessorEditor(processor),
           processorState(processorState),
           thresholdAttachment(processorState, "threshold", thresholdSlider),
-          ratioAttachment(processorState, "ratio", ratioSlider),
           attackAttachment(processorState, "attack", attackSlider),
           releaseAttachment(processorState, "release", releaseSlider),
           makeupAttachment(processorState, "makeup", makeupSlider)
     {
         // Set up sliders with better styling
-        setupSlider(thresholdSlider, "THRESHOLD", -20.0f);
-        setupSlider(ratioSlider, "RATIO", 4.0f);
-        setupSlider(attackSlider, "ATTACK", 10.0f);
-        setupSlider(releaseSlider, "RELEASE", 100.0f);
+        setupThresholdSlider(thresholdSlider, "THRESHOLD", -20.0f);
+        setupRatioComboBox();
+        setupTimeSlider(attackSlider, "ATTACK", 10.0f, 0.1f, 400.0f);
+        setupTimeSlider(releaseSlider, "RELEASE", 100.0f, 1.0f, 400.0f);
         setupSlider(makeupSlider, "MAKEUP", 0.0f);
+        makeupSlider.setTextValueSuffix(" dB");
 
         // Add visual elements
         addAndMakeVisible(titleLabel);
@@ -310,7 +310,7 @@ public:
         // Top row sliders
         auto sliderWidth = topRow.getWidth() / 2;
         thresholdSlider.setBounds(topRow.removeFromLeft(sliderWidth).reduced(20));
-        ratioSlider.setBounds(topRow.removeFromLeft(sliderWidth).reduced(20));
+        ratioComboBox.setBounds(topRow.removeFromLeft(sliderWidth).reduced(20));
 
         // Bottom row sliders
         auto bottomSliderWidth = bottomRow.getWidth() / 3;
@@ -364,7 +364,6 @@ private:
     {
         slider.setSliderStyle(Slider::LinearVertical);
         slider.setTextBoxStyle(Slider::TextBoxBelow, false, 150, 30);
-        slider.setColour(Slider::textBoxBackgroundColourId, Colours::black.withAlpha(0.7f));
         slider.setColour(Slider::textBoxOutlineColourId, Colours::lightblue.withAlpha(0.5f));
         slider.setColour(Slider::trackColourId, Colours::lightblue.withAlpha(0.3f));
         slider.setColour(Slider::backgroundColourId, Colours::darkgrey);
@@ -386,10 +385,118 @@ private:
         // Apply hover effect
         slider.setLookAndFeel(new SliderHoverEffect());
     }
+    
+    void setupThresholdSlider(Slider& slider, const String& labelText, float defaultValue)
+    {
+        slider.setSliderStyle(Slider::LinearVertical);
+        slider.setTextBoxStyle(Slider::TextBoxBelow, false, 150, 30);
+        slider.setColour(Slider::textBoxBackgroundColourId, Colours::black.withAlpha(0.7f));
+        slider.setColour(Slider::textBoxOutlineColourId, Colours::lightblue.withAlpha(0.5f));
+        slider.setColour(Slider::trackColourId, Colours::lightblue.withAlpha(0.3f));
+        slider.setColour(Slider::backgroundColourId, Colours::darkgrey);
+        slider.setValue(defaultValue);
+        slider.setSize(slider.getWidth(), 200);
+        
+        // Add suffix for threshold values
+        slider.setTextValueSuffix(" dB");
+
+        addAndMakeVisible(slider);
+
+        // Create and add label
+        auto* label = new Label();
+        label->setText(labelText, dontSendNotification);
+        label->setFont(FontOptions(18.0f, Font::bold));
+        label->setColour(Label::textColourId, Colours::white);
+        label->setColour(Label::backgroundColourId, Colours::transparentBlack);
+        label->setJustificationType(Justification::centred);
+        label->attachToComponent(&slider, false);
+        addAndMakeVisible(label);
+
+        // Apply hover effect
+        slider.setLookAndFeel(new SliderHoverEffect());
+    }
+    
+    void setupTimeSlider(Slider& slider, const String& labelText, float defaultValue, float minValue, float maxValue)
+    {
+        slider.setSliderStyle(Slider::LinearVertical);
+        slider.setTextBoxStyle(Slider::TextBoxBelow, false, 150, 30);
+        slider.setColour(Slider::textBoxBackgroundColourId, Colours::black.withAlpha(0.7f));
+        slider.setColour(Slider::textBoxOutlineColourId, Colours::lightblue.withAlpha(0.5f));
+        slider.setColour(Slider::trackColourId, Colours::lightblue.withAlpha(0.3f));
+        slider.setColour(Slider::backgroundColourId, Colours::darkgrey);
+        
+        // Set range in milliseconds
+        slider.setRange(minValue, maxValue, 0.1);
+        slider.setValue(defaultValue);
+        slider.setSize(slider.getWidth(), 200);
+        
+        // Add suffix for time values
+        slider.setTextValueSuffix(" ms");
+
+        addAndMakeVisible(slider);
+
+        // Create and add label
+        auto* label = new Label();
+        label->setText(labelText, dontSendNotification);
+        label->setFont(FontOptions(18.0f, Font::bold));
+        label->setColour(Label::textColourId, Colours::white);
+        label->setColour(Label::backgroundColourId, Colours::transparentBlack);
+        label->setJustificationType(Justification::centred);
+        label->attachToComponent(&slider, false);
+        addAndMakeVisible(label);
+
+        // Apply hover effect
+        slider.setLookAndFeel(new SliderHoverEffect());
+    }
+    
+    void setupRatioComboBox()
+    {
+        // Add ratio options
+        ratioComboBox.addItem("1:1", 1);
+        ratioComboBox.addItem("2:1", 2);
+        ratioComboBox.addItem("3:1", 3);
+        ratioComboBox.addItem("4:1", 4);
+        ratioComboBox.addItem("6:1", 5);
+        ratioComboBox.addItem("8:1", 6);
+        ratioComboBox.addItem("10:1", 7);
+        ratioComboBox.addItem("20:1", 8);
+        
+        ratioComboBox.setSelectedId(4); // Default to 4:1
+        ratioComboBox.setJustificationType(Justification::centred);
+        ratioComboBox.setColour(ComboBox::backgroundColourId, Colours::black.withAlpha(0.7f));
+        ratioComboBox.setColour(ComboBox::outlineColourId, Colours::lightblue.withAlpha(0.5f));
+        ratioComboBox.setColour(ComboBox::textColourId, Colours::white);
+        ratioComboBox.setColour(ComboBox::arrowColourId, Colours::lightblue);
+        
+        ratioComboBox.onChange = [this]() {
+            auto selectedId = ratioComboBox.getSelectedId();
+            if (selectedId > 0) {
+                // Convert to preset index (0-7)
+                auto presetIndex = selectedId - 1;
+                // Update the processor's ratio parameter
+                if (auto* ratioParam = processorState.getParameter("ratio")) {
+                    ratioParam->setValueNotifyingHost(presetIndex / 7.0f); // Normalize to 0-1
+                }
+            }
+        };
+        
+        addAndMakeVisible(ratioComboBox);
+        
+        // Create and add label
+        auto* label = new Label();
+        label->setText("RATIO", dontSendNotification);
+        label->setFont(FontOptions(18.0f, Font::bold));
+        label->setColour(Label::textColourId, Colours::white);
+        label->setColour(Label::backgroundColourId, Colours::transparentBlack);
+        label->setJustificationType(Justification::centred);
+        label->attachToComponent(&ratioComboBox, false);
+        addAndMakeVisible(label);
+    }
 
     //==============================================================================
     // UI Components
-    Slider thresholdSlider, ratioSlider, attackSlider, releaseSlider, makeupSlider;
+    Slider thresholdSlider, attackSlider, releaseSlider, makeupSlider;
+    ComboBox ratioComboBox;
     Label titleLabel;
     LevelMeter compressionMeter{"COMPRESSION"};
     LevelMeter inputMeter{"INPUT"};
@@ -397,7 +504,6 @@ private:
 
     // Parameter attachments
     AudioProcessorValueTreeState::SliderAttachment thresholdAttachment;
-    AudioProcessorValueTreeState::SliderAttachment ratioAttachment;
     AudioProcessorValueTreeState::SliderAttachment attackAttachment;
     AudioProcessorValueTreeState::SliderAttachment releaseAttachment;
     AudioProcessorValueTreeState::SliderAttachment makeupAttachment;
