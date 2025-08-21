@@ -43,6 +43,7 @@ public:
     void reset()
     {
         envelope = 0.0f;
+        lastGain = 1.0f;  // Reset gain smoothing state
     }
     
     /** Process a single sample through the compressor */
@@ -76,32 +77,53 @@ public:
             }
         }
         
-        // Apply attack/release envelope with anti-pop smoothing
+        // Apply attack/release envelope with improved stability
         auto targetGainReduction = gainReduction;
+        
+        // IMPROVED: Add envelope stabilization for extreme settings
+        auto envelopeDiff = targetGainReduction - envelope;
+        auto absEnvelopeDiff = std::abs(envelopeDiff);
+        
+        // Detect potential oscillation and dampen it
+        bool isExtremeSettings = (attack < 2.0f && release < 10.0f);
         
         if (targetGainReduction > envelope)
         {
-            // Attack phase - add smoothing for fast attacks
-            auto attackDiff = targetGainReduction - envelope;
-            
-            // For very fast attacks, smooth the transition to prevent pops
-            if (attack < 2.0f) {
-                // Use a very subtle smoother curve for extremely fast attacks
-                auto smoothedCoeff = attackCoeff * 0.8f; // Very slight reduction
-                envelope += smoothedCoeff * attackDiff;
+            // Attack phase - improved stability for fast attacks
+            if (isExtremeSettings) {
+                // For extreme settings, use more conservative coefficients
+                auto stabilizedCoeff = attackCoeff * 0.5f; // More aggressive dampening
+                envelope += stabilizedCoeff * envelopeDiff;
+            } else if (attack < 2.0f) {
+                // Use a smoother curve for very fast attacks
+                auto smoothedCoeff = attackCoeff * 0.8f;
+                envelope += smoothedCoeff * envelopeDiff;
             } else {
-                // Normal attack behavior for most attacks
-                envelope += attackCoeff * attackDiff;
+                // Normal attack behavior
+                envelope += attackCoeff * envelopeDiff;
             }
         }
         else
         {
-            // Release phase - normal behavior
-            envelope += releaseCoeff * (targetGainReduction - envelope);
+            // Release phase - improved stability for fast releases
+            if (isExtremeSettings) {
+                // For extreme settings, use more conservative release
+                auto stabilizedCoeff = releaseCoeff * 0.7f; // More conservative
+                envelope += stabilizedCoeff * envelopeDiff;
+            } else {
+                // Normal release behavior
+                envelope += releaseCoeff * envelopeDiff;
+            }
         }
         
-        // Simple bounds check
+        // Enhanced bounds check with hysteresis to prevent rapid oscillation
         envelope = jlimit(0.0f, 60.0f, envelope);
+        
+        // Add minimum change threshold to prevent micro-oscillations
+        if (isExtremeSettings && absEnvelopeDiff < 0.01f) {
+            // Force envelope to settle if changes are too small
+            envelope = targetGainReduction;
+        }
         
         // Apply compression and makeup gain with safety limits
         auto gainInDb = -envelope + makeupGain;
@@ -119,7 +141,7 @@ public:
         compressedGain = jlimit(0.001f, 10.0f, compressedGain);
         
         // Very subtle gain smoothing to prevent pops
-        static float lastGain = 1.0f;
+        // FIXED: Use member variable instead of static to prevent inter-channel issues
         auto gainDiff = compressedGain - lastGain;
         
         // Apply minimal smoothing only for extremely fast attacks
@@ -272,22 +294,38 @@ public:
     {
         if (sampleRate > 0.0)
         {
-            // Use a simpler, more stable approach
             // Convert milliseconds to samples
             auto attackSamples = attack * 0.001f * static_cast<float>(sampleRate);
             auto releaseSamples = release * 0.001f * static_cast<float>(sampleRate);
             
-            // Ensure minimum values to prevent instability
-            attackSamples = std::max(attackSamples, 1.0f);
-            releaseSamples = std::max(releaseSamples, 1.0f);
+            // IMPROVED: Use higher minimum values for extreme stability
+            // This prevents the white noise issue with ultra-fast times
+            attackSamples = std::max(attackSamples, 10.0f);  // Increased from 1.0f
+            releaseSamples = std::max(releaseSamples, 10.0f); // Increased from 1.0f
             
-            // Simple exponential coefficient calculation
-            attackCoeff = 1.0f - expf(-2.2f / attackSamples);
-            releaseCoeff = 1.0f - expf(-2.2f / releaseSamples);
+            // Special handling for extreme settings to prevent instability
+            if (attack < 1.0f) {
+                // For ultra-fast attacks, use a more conservative approach
+                attackSamples = std::max(attackSamples, 20.0f);
+                // Use a different coefficient formula for extreme cases
+                attackCoeff = 1.0f - expf(-1.0f / attackSamples); // Reduced from -2.2f
+            } else {
+                // Normal coefficient calculation
+                attackCoeff = 1.0f - expf(-2.2f / attackSamples);
+            }
             
-            // Simple safety limits
-            attackCoeff = jlimit(0.001f, 0.999f, attackCoeff);
-            releaseCoeff = jlimit(0.001f, 0.999f, releaseCoeff);
+            if (release < 5.0f) {
+                // For ultra-fast releases, use more conservative approach
+                releaseSamples = std::max(releaseSamples, 30.0f);
+                releaseCoeff = 1.0f - expf(-1.5f / releaseSamples); // Reduced from -2.2f
+            } else {
+                // Normal coefficient calculation
+                releaseCoeff = 1.0f - expf(-2.2f / releaseSamples);
+            }
+            
+            // More conservative safety limits to prevent oscillation
+            attackCoeff = jlimit(0.001f, 0.7f, attackCoeff);   // Reduced max from 0.999f
+            releaseCoeff = jlimit(0.001f, 0.3f, releaseCoeff); // Reduced max from 0.999f
         }
     }
     
@@ -391,6 +429,7 @@ private:
     // State variables
     float envelope = 0.0f;        // current gain reduction
     double sampleRate = 44100.0;  // sample rate
+    float lastGain = 1.0f;        // for gain smoothing (moved from static)
     
     // Metering variables
     mutable float inputLevel = -60.0f;
